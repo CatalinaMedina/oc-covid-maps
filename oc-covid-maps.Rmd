@@ -1,0 +1,13 @@
+---
+title: "OC Covid Maps"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  fig.align = "center"
+)
+```
+
+
