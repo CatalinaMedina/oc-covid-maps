@@ -5,9 +5,222 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = FALSE,
-  fig.align = "center"
+  echo = TRUE,
+  fig.align = "center",
+  message = FALSE,
+  warning = FALSE
 )
 ```
+
+
+```{r libraries}
+library(tidyverse)
+library(rgdal)
+library(broom)
+library(here)
+library(lubridate)
+library(viridis)
+
+library(TTR)
+```
+
+
+```{r map-unchanged-shp, fig.cap="Map of Southern California zip codes"}
+shp <- readOGR(
+  dsn = paste0(getwd(), "/data"), 
+  verbose = FALSE,
+  layer = "Zipcode_boundary_scag_2009"
+)
+
+shp$zip <- shp$KEY_
+
+shp_df <- tidy(shp, region = "zip")
+cnames <- aggregate(cbind(long, lat) ~ id, data = shp_df, FUN = mean)
+
+ggplot() +
+  geom_polygon(
+    data = shp, 
+    aes(x = long, y = lat, group = group), 
+    color = "black", 
+    fill = NA
+  ) +
+  geom_text(data = cnames, aes(x = long, y = lat, label = id), size = 3) +
+  theme_void()
+```
+\newpage
+
+```{r get-incidence-data}
+neg_line_list <- read_csv(here("data", "All PCR tests updated 2.22.21.csv")) %>% 
+  mutate(Specimen.Collected.Date = as.Date(Specimen.Collected.Date, format = "%m-%d-%Y")) %>% 
+  select(
+    id = IncidentID, 
+    posted_date = Specimen.Collected.Date, 
+    test_result = TestResult, 
+    zip = Zip
+  ) %>% 
+  mutate(test_result = tolower(test_result)) %>% 
+  mutate(test_result = factor(case_when(
+      test_result == "positive" ~ "positive",
+      test_result == "negative" ~ "negative",
+      test_result == "inconclusive" | test_result == "invalid" ~ "other"
+  ))) %>% 
+  filter(!is.na(test_result)) %>% 
+  mutate(zip = str_sub(zip, end = 5)) %>%
+    filter(posted_date >= ymd("2020-01-01")) %>%
+    drop_na() %>%
+    group_by(id) %>%
+    arrange(posted_date) %>%
+    ungroup()
+
+
+  new_deaths_tbl <- read_csv(here("data", "2.22.21 release to UCI team.csv"),
+                             col_types = cols(.default = col_skip(),
+                                              `DtDeath` = col_date("%Y-%m-%d"),
+                                              `DeathDueCOVID` = col_character(),
+                                              Zip = col_character())) %>%
+    drop_na() %>%
+    select(posted_date = `DtDeath`, zip = Zip) %>%
+    count(posted_date, zip, name = "new_deaths") %>%
+    arrange(posted_date)
+
+
+  first_pos <- neg_line_list %>%
+    filter(test_result == "positive") %>%
+    group_by(id) %>%
+    summarise(first_pos = min(posted_date))
+
+  neg_line_list_filtered <- left_join(neg_line_list, first_pos) %>%
+    mutate(first_pos = replace_na(first_pos, lubridate::ymd("9999-12-31"))) %>%
+    filter(posted_date <= first_pos) %>%
+    select(-first_pos) %>%
+    distinct()
+
+
+  oc_zips <- read_csv(here("data", "zipcode.csv"),
+                      col_types = cols(Zip = col_character())) %>%
+    rename_all(str_to_lower) 
+
+
+  neg_line_list_filtered_city <- neg_line_list_filtered %>%
+    right_join(oc_zips) %>%
+    count(posted_date, test_result, zip) %>%
+    pivot_wider(names_from = test_result, values_from = n) 
+
+
+  new_deaths_tbl_city <- new_deaths_tbl %>%
+    right_join(oc_zips) %>%
+    drop_na() %>%
+    count(posted_date, zip, wt = new_deaths, name = "new_deaths")
+
+  pca_by_zip <- full_join(neg_line_list_filtered_city, new_deaths_tbl_city) %>%
+    replace(is.na(.), 0) %>%
+    mutate(new_cases = positive, new_tests = negative + positive + other) %>%
+    select(posted_date, zip, new_cases, new_tests, new_deaths) %>%
+    arrange(zip, posted_date) 
+    
+
+```
+
+
+```{r get-plotting-var}
+# Time frame to consider
+start_date <- as.Date("2020-12-08")
+end_date <- as.Date("2020-12-14")
+
+# Number of cases per cases_per people in zip per time frame
+cases_per <- 100000 # population is scaled by this
+
+oc_zips$scaled_pop <- oc_zips$population / cases_per
+
+plot_data <- pca_by_zip %>% 
+  filter(posted_date >= start_date & posted_date <= end_date) %>% 
+  group_by(zip) %>% 
+  summarize(new_cases_in_frame = sum(new_cases)) %>% 
+  inner_join(oc_zips, by = "zip") %>% 
+  mutate(new_cases_scaled = new_cases_in_frame / scaled_pop) %>% 
+  mutate(plot_var = factor(
+    case_when(
+      new_cases_scaled <= 5 ~ "0-5",
+      new_cases_scaled <= 30 ~ "6-30",
+      new_cases_scaled <= 60 ~ "31-60",
+      new_cases_scaled <= 120 ~ "61-120",
+      new_cases_scaled <= 240 ~ "121-240",
+      new_cases_scaled <= 480 ~ "241-480",
+      new_cases_scaled <= 1669 ~ "481-1669",
+      new_cases_scaled > 1669 ~ ">1669"
+    ),
+    levels = c("0-5", "6-30", "31-60", "61-120", "121-240", "241-480", "481-1669", ">1669")
+  )) %>% 
+  select(zip, plot_var)
+```
+
+
+```{r match-plot-var-w-shp}
+# rename zip column to match the zip in shp file
+plot_data$KEY_ <- plot_data$zip
+
+shp_zip <- readOGR(
+  dsn = paste0(getwd(), "/data"), 
+  verbose = FALSE,
+  layer = "Zipcode_boundary_scag_2009"
+)
+
+shp_zip1 <- subset(shp_zip, KEY_ %in% plot_data$KEY_)
+shp_zip1@data <- shp_zip@data %>% 
+  merge(plot_data, by = "KEY_")
+
+shp_zip_df <- tidy(shp_zip1, region = "KEY_") %>% 
+  mutate(KEY_ = id) %>% 
+  inner_join(plot_data, by = "KEY_")
+cnames <- aggregate(cbind(long, lat) ~ id, data = shp_zip_df, FUN = mean)
+  
+```
+
+
+```{r, fig.cap="Map of Orang County zip codes"}
+ggplot() +
+  geom_polygon(
+    data = shp_zip_df,
+    aes(
+      x = long,
+      y = lat,
+      group = group
+    ),
+    color = "black",
+    fill = "white"
+  ) +
+  geom_text(data = cnames, aes(x = long, y = lat, label = id), size = 3) +
+  theme_void()
+```
+\newpage
+
+```{r map-with-plot-var, fig.cap="Map of Case incidence in Orange County"}
+ggplot() +
+  geom_polygon(
+    data = shp_zip_df, 
+    aes(
+      x = long, 
+      y = lat, 
+      group = group,
+      fill = plot_var
+    ), 
+    color = "black"
+  ) +
+  scale_fill_viridis(
+    drop = FALSE,
+    discrete = TRUE,
+    direction = -1
+  ) +
+  labs(fill = paste0(
+    "Reported cases per 100,000\npeople from ", 
+    start_date,
+    "\nto ",
+    end_date
+  )) +
+  theme_void() 
+```
+
+
+
 
 
