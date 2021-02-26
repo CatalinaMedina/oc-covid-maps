@@ -25,32 +25,8 @@ library(TTR)
 ```
 
 
-```{r map-unchanged-shp, fig.cap="Map of Southern California zip codes"}
-shp <- readOGR(
-  dsn = paste0(getwd(), "/data"), 
-  verbose = FALSE,
-  layer = "Zipcode_boundary_scag_2009"
-)
-
-shp$zip <- shp$KEY_
-
-shp_df <- tidy(shp, region = "zip")
-cnames <- aggregate(cbind(long, lat) ~ id, data = shp_df, FUN = mean)
-
-ggplot() +
-  geom_polygon(
-    data = shp, 
-    aes(x = long, y = lat, group = group), 
-    color = "black", 
-    fill = NA
-  ) +
-  geom_text(data = cnames, aes(x = long, y = lat, label = id), size = 3) +
-  theme_void()
-```
-\newpage
-
 ```{r get-incidence-data}
-neg_line_list <- read_csv(here("data", "All PCR tests updated 2.22.21.csv")) %>% 
+neg_line_list <- read_csv(here("data/covid-data", "All PCR tests updated 2.22.21.csv")) %>% 
   mutate(Specimen.Collected.Date = as.Date(Specimen.Collected.Date, format = "%m-%d-%Y")) %>% 
   select(
     id = IncidentID, 
@@ -73,7 +49,7 @@ neg_line_list <- read_csv(here("data", "All PCR tests updated 2.22.21.csv")) %>%
     ungroup()
 
 
-  new_deaths_tbl <- read_csv(here("data", "2.22.21 release to UCI team.csv"),
+  new_deaths_tbl <- read_csv(here("data/covid-data", "2.22.21 release to UCI team.csv"),
                              col_types = cols(.default = col_skip(),
                                               `DtDeath` = col_date("%Y-%m-%d"),
                                               `DeathDueCOVID` = col_character(),
@@ -159,53 +135,40 @@ plot_data <- pca_by_zip %>%
 # rename zip column to match the zip in shp file
 plot_data$KEY_ <- plot_data$zip
 
-shp_zip <- readOGR(
-  dsn = paste0(getwd(), "/data"), 
+shp <- readOGR(
+  dsn = here("data/shape-files"), 
   verbose = FALSE,
   layer = "Zipcode_boundary_scag_2009"
 )
 
-shp_zip1 <- subset(shp_zip, KEY_ %in% plot_data$KEY_)
-shp_zip1@data <- shp_zip@data %>% 
-  merge(plot_data, by = "KEY_")
-
-shp_zip_df <- tidy(shp_zip1, region = "KEY_") %>% 
+shp_zip1 <- subset(shp, KEY_ %in% plot_data$KEY_)
+shp_tidy <- tidy(shp_zip1, region = "KEY_") %>% 
   mutate(KEY_ = id) %>% 
   inner_join(plot_data, by = "KEY_")
-cnames <- aggregate(cbind(long, lat) ~ id, data = shp_zip_df, FUN = mean)
-  
+
+shp_label <- shp_tidy %>% 
+  group_by(id) %>% 
+  summarize(long = mean(range(long)), lat = mean(range(lat)))
+
 ```
 
 
 ```{r, fig.cap="Map of Orang County zip codes"}
-ggplot() +
-  geom_polygon(
-    data = shp_zip_df,
-    aes(
-      x = long,
-      y = lat,
-      group = group
-    ),
-    color = "black",
-    fill = "white"
-  ) +
-  geom_text(data = cnames, aes(x = long, y = lat, label = id), size = 3) +
-  theme_void()
+ggplot(shp_tidy, mapping = aes(x = long, y = lat, group = group)) +
+  geom_polygon(color = "black", fill = NA) +
+  theme_void() +
+  geom_text(
+    data = shp_label,
+    mapping = aes(z = long, y = lat, label = id, group = NA),
+    cex = 2, 
+    color = "black"
+  )
 ```
 \newpage
 
 ```{r map-with-plot-var, fig.cap="Map of Case incidence in Orange County"}
-ggplot() +
-  geom_polygon(
-    data = shp_zip_df, 
-    aes(
-      x = long, 
-      y = lat, 
-      group = group,
-      fill = plot_var
-    ), 
-    color = "black"
-  ) +
+ggplot(shp_tidy, mapping = aes(x = long, y = lat, group = group, fill = plot_var)) +
+  geom_polygon(color = "black") +
   scale_fill_viridis(
     drop = FALSE,
     discrete = TRUE,
