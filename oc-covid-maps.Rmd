@@ -119,8 +119,8 @@ prep_map_data <- function(
 ```
 
 
-```{r map-cases-data-function}
-map_cases_data <- function( # Map number of COVID-19 cases mapped to OC zip codes
+```{r map-cases-function}
+map_cases <- function( # Map number of COVID-19 cases mapped to OC zip codes
   map_data_by_zip,
   start_date, 
   end_date, 
@@ -190,8 +190,8 @@ map_cases_data <- function( # Map number of COVID-19 cases mapped to OC zip code
 ```
 
 
-```{r map-test-data-function}
-map_tests_data <- function( # Map number of COVID-19 cases mapped to OC zip codes
+```{r map-test-function}
+map_tests <- function( # Map number of COVID-19 cases mapped to OC zip codes
   map_data_by_zip,
   start_date, 
   end_date, 
@@ -270,6 +270,80 @@ map_tests_data <- function( # Map number of COVID-19 cases mapped to OC zip code
 ```
 
 
+```{r map-per-pos-function}
+map_per_pos <- function( # Map number of COVID-19 cases mapped to OC zip codes
+  map_data_by_zip,
+  start_date, 
+  end_date  
+  ){
+  
+  covid_data_by_zip <- map_data_by_zip$covid_data_by_zip
+  oc_zips <- map_data_by_zip$oc_zips
+  shp <- map_data_by_zip$shp
+  
+
+  plot_data <- covid_data_by_zip %>% 
+    filter(posted_date >= start_date & posted_date <= end_date) %>% 
+    group_by(zip) %>% 
+    summarize(per_pos = 100 * sum(new_cases) / sum(new_tests)) %>% 
+    inner_join(oc_zips, by = "zip") %>% 
+    mutate(plot_var = factor(
+      case_when(
+        per_pos <= 5 ~ "0-5",
+        per_pos <= 10 ~ "6-10",
+        per_pos <= 15 ~ "11-15",
+        per_pos <= 20 ~ "16-20",
+        per_pos <= 30 ~ "21-30",
+        per_pos <= 40 ~ "31-40",
+        per_pos > 40 ~ ">40"
+      ),
+      levels = c(
+        "0-5",
+        "6-10",
+        "11-15",
+        "16-20",
+        "21-30",
+        "31-40",
+        ">40"
+      )
+    )) %>% 
+    select(zip, plot_var)
+  
+  # rename zip column to match the zip in shp file
+  plot_data$KEY_ <- plot_data$zip
+  
+  
+  shp_zip <- subset(shp, KEY_ %in% plot_data$KEY_)
+  shp_tidy <- tidy(shp_zip, region = "KEY_") %>% 
+    mutate(KEY_ = id) %>% 
+    inner_join(plot_data, by = "KEY_")
+  
+  shp_label <- shp_tidy %>% 
+    group_by(id) %>% 
+    summarize(long = mean(range(long)), lat = mean(range(lat)))
+  
+  
+  # Produce map
+  ggplot(shp_tidy, mapping = aes(x = long, y = lat, group = group, fill = plot_var)) +
+  geom_polygon(color = "black") +
+  scale_fill_viridis(
+    drop = FALSE,
+    discrete = TRUE,
+    direction = -1
+  ) +
+  labs(fill = paste0(
+    "Reported tests per ", 
+    prettyNum(cases_per, big.mark = ",", scientific = FALSE), 
+    "\npeople from ", 
+    start_date,
+    "\nto ",
+    end_date
+  )) +
+  theme_void() 
+}
+```
+
+
 ```{r map-blank-w-zips}
 oc_zip <- map_data_by_zip$oc_zips
 
@@ -300,16 +374,22 @@ ggplot(shp_tidy, mapping = aes(x = long, y = lat, group = group)) +
 map_data_by_zip <- prep_map_data()
 
 
-map_cases_data(
+map_cases(
   map_data_by_zip = map_data_by_zip, 
   start_date = as.Date("2020-12-08"), 
   end_date = as.Date("2020-12-14")
 )
 
-map_tests_data(
+map_tests(
   map_data_by_zip = map_data_by_zip, 
   start_date = as.Date("2020-12-08"), 
   end_date = as.Date("2020-12-14")
+)
+
+map_per_pos(
+  map_data_by_zip = map_data_by_zip, 
+  start_date = as.Date("2020-12-08"), 
+  end_date = as.Date("2020-12-14")  
 )
 ```
 
