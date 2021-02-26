@@ -131,6 +131,11 @@ map_cases <- function( # Map number of COVID-19 cases mapped to OC zip codes
   oc_zips <- map_data_by_zip$oc_zips
   shp <- map_data_by_zip$shp
   
+  if (sum(covid_data_by_zip$posted_date == start_date) < 1) {
+    stop("start_date is out of range")
+  } else if (sum(covid_data_by_zip$posted_date == end_date) < 1) {
+    stop("end_date is out of range")
+  }
   
   oc_zips$scaled_pop <- oc_zips$population / cases_per
   
@@ -181,9 +186,9 @@ map_cases <- function( # Map number of COVID-19 cases mapped to OC zip codes
     "Reported cases per ", 
     prettyNum(cases_per, big.mark = ",", scientific = FALSE), 
     "\npeople from ", 
-    start_date,
-    "\nto ",
-    end_date
+    as.character(start_date, format = "%m/%d/%Y"),
+    " to ",
+    as.character(end_date, format = "%m/%d/%Y")
   )) +
   theme_void() 
 }
@@ -202,6 +207,11 @@ map_tests <- function( # Map number of COVID-19 cases mapped to OC zip codes
   oc_zips <- map_data_by_zip$oc_zips
   shp <- map_data_by_zip$shp
   
+  if (sum(covid_data_by_zip$posted_date == start_date) < 1) {
+    stop("start_date is out of range")
+  } else if (sum(covid_data_by_zip$posted_date == end_date) < 1) {
+    stop("end_date is out of range")
+  }
   
   oc_zips$scaled_pop <- oc_zips$population / cases_per
   
@@ -235,6 +245,7 @@ map_tests <- function( # Map number of COVID-19 cases mapped to OC zip codes
     )) %>% 
     select(zip, plot_var)
   
+  
   # rename zip column to match the zip in shp file
   plot_data$KEY_ <- plot_data$zip
   
@@ -261,9 +272,9 @@ map_tests <- function( # Map number of COVID-19 cases mapped to OC zip codes
     "Reported tests per ", 
     prettyNum(cases_per, big.mark = ",", scientific = FALSE), 
     "\npeople from ", 
-    start_date,
-    "\nto ",
-    end_date
+    as.character(start_date, format = "%m/%d/%Y"),
+    " to ",
+    as.character(end_date, format = "%m/%d/%Y")
   )) +
   theme_void() 
 }
@@ -281,6 +292,11 @@ map_per_pos <- function( # Map number of COVID-19 cases mapped to OC zip codes
   oc_zips <- map_data_by_zip$oc_zips
   shp <- map_data_by_zip$shp
   
+  if (sum(covid_data_by_zip$posted_date == start_date) < 1) {
+    stop("start_date is out of range")
+  } else if (sum(covid_data_by_zip$posted_date == end_date) < 1) {
+    stop("end_date is out of range")
+  }
 
   plot_data <- covid_data_by_zip %>% 
     filter(posted_date >= start_date & posted_date <= end_date) %>% 
@@ -332,12 +348,10 @@ map_per_pos <- function( # Map number of COVID-19 cases mapped to OC zip codes
     direction = -1
   ) +
   labs(fill = paste0(
-    "Reported tests per ", 
-    prettyNum(cases_per, big.mark = ",", scientific = FALSE), 
-    "\npeople from ", 
-    start_date,
-    "\nto ",
-    end_date
+    "Percent of COVID-19\ntest positive from\n", 
+    as.character(start_date, format = "%m/%d/%Y"),
+    " to ",
+    as.character(end_date, format = "%m/%d/%Y")
   )) +
   theme_void() 
 }
@@ -372,6 +386,7 @@ ggplot(shp_tidy, mapping = aes(x = long, y = lat, group = group)) +
 
 ```{r map-cases}
 map_data_by_zip <- prep_map_data()
+start_date <- as.Date
 
 
 map_cases(
