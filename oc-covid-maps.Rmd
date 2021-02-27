@@ -25,7 +25,7 @@ library(TTR)
 ```
 
 
-```{r prep-map-data}
+```{r prep-map-data-function}
 prep_map_data <- function(
   neg_line_list_file = here("data/covid-data", "All PCR tests updated 2.22.21.csv"),
   line_list_file = here("data/covid-data", "2.22.21 release to UCI team.csv"), 
@@ -119,7 +119,7 @@ prep_map_data <- function(
 ```
 
 
-```{r gen-map-func}
+```{r gen-map-function}
 gen_map <- function(plot_data, shp, legend_label) {
   plot_data$KEY_ <- plot_data$zip
   
@@ -175,20 +175,20 @@ map_cases <- function( # Map number of COVID-19 cases mapped to OC zip codes
     mutate(plot_var = factor(
       case_when(
         new_cases_scaled <= 5 ~ "0-5",
-        new_cases_scaled <= 25 ~ "6-25",
-        new_cases_scaled <= 50 ~ "26-50",
-        new_cases_scaled <= 100 ~ "51-100",
-        new_cases_scaled <= 250 ~ "101-250",
-        new_cases_scaled <= 500 ~ "251-500",
+        new_cases_scaled <= 25 ~ "5-25",
+        new_cases_scaled <= 50 ~ "25-50",
+        new_cases_scaled <= 100 ~ "50-100",
+        new_cases_scaled <= 250 ~ "100-250",
+        new_cases_scaled <= 500 ~ "250-500",
         new_cases_scaled > 500 ~ ">500"
       ),
       levels = c(
         "0-5",
-        "6-25",
-        "26-50",
-        "51-100",
-        "101-250",
-        "251-500",
+        "5-25",
+        "25-50",
+        "50-100",
+        "100-250",
+        "250-500",
         ">500"
     ))) %>% 
     select(zip, plot_var)
@@ -236,20 +236,20 @@ map_tests <- function( # Map number of COVID-19 cases mapped to OC zip codes
     mutate(plot_var = factor(
       case_when(
         new_tests_scaled <= 100 ~ "0-100",
-        new_tests_scaled <= 250 ~ "101-250",
-        new_tests_scaled <= 500 ~ "251-500",
-        new_tests_scaled <= 1000 ~ "501-1000",
-        new_tests_scaled <= 2500 ~ "1001-2500",
-        new_tests_scaled <= 5000 ~ "2501-5000",
+        new_tests_scaled <= 250 ~ "100-250",
+        new_tests_scaled <= 500 ~ "250-500",
+        new_tests_scaled <= 1000 ~ "500-1000",
+        new_tests_scaled <= 2500 ~ "1000-2500",
+        new_tests_scaled <= 5000 ~ "2500-5000",
         new_tests_scaled >5000 ~ ">5000"
       ),
       levels = c(
         "0-100", 
-        "101-250", 
-        "251-500", 
-        "501-1000", 
-        "1001-2500", 
-        "2501-5000", 
+        "100-250", 
+        "250-500", 
+        "500-1000", 
+        "1000-2500", 
+        "2500-5000", 
         ">5000"
       )
     )) %>% 
@@ -326,7 +326,8 @@ map_per_pos <- function( # Map number of COVID-19 cases mapped to OC zip codes
 ```
 
 
-```{r map-cases}
+```{r actual-maps}
+# Downloading data ans shape file takes about 30 seconds
 map_data_by_zip <- prep_map_data()
 start_date <- as.Date
 
@@ -351,7 +352,7 @@ map_per_pos(
 ```
 
 
-```{r map-blank-w-zips}
+```{r map-oc-blank-w-zips}
 oc_zip <- map_data_by_zip$oc_zips
 
 # load and work shp file
@@ -375,3 +376,7 @@ ggplot(shp_tidy, mapping = aes(x = long, y = lat, group = group)) +
     color = "black"
   )
 ```
+
+
+
+
