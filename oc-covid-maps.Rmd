@@ -41,6 +41,14 @@ map_cases(
 )
 
 map_cases(
+  map_data_list = map_data_by_city, 
+  geog_level = "city",
+  start_date = as.Date("2021-02-15"), 
+  end_date = as.Date("2021-02-21"),
+  add_geog_level_labels = TRUE
+)
+
+map_cases(
   map_data_list = map_data_by_zip, 
   geog_level = "zip",
   start_date = as.Date("2021-02-15"), 
@@ -76,56 +84,6 @@ map_per_pos(
 )
 ```
 
-
-```{r map-oc-blank-w-zips}
-oc_data <- map_data_by_zip$oc_data
-
-# load and work shp file
-shp <- map_data_by_zip$shp
-  
-shp_zip <- subset(shp, KEY_ %in% oc_data$zip)
-shp_tidy <- tidy(shp_zip, region = "KEY_")  
-    
-shp_label <- shp_tidy %>% 
-    group_by(id) %>% 
-    summarize(long = mean(range(long)), lat = mean(range(lat)))
-  
-
-ggplot(shp_tidy, mapping = aes(x = long, y = lat, group = group)) +
-  geom_polygon(color = "black", fill = NA) +
-  theme_void() +
-  geom_text(
-    data = shp_label,
-    mapping = aes(z = long, y = lat, label = id, group = NA),
-    cex = 2, 
-    color = "black"
-  )
-
-
-################
-oc_data <- map_data_by_city$oc_data
-
-# load and work shp file
-shp <- map_data_by_zip$shp
-  
-shp_zip <- subset(shp, NAME %in% oc_data$city)
-shp_tidy <- tidy(shp_zip, region = "NAME")  
-    
-shp_label <- shp_tidy %>% 
-    group_by(id) %>% 
-    summarize(long = mean(range(long)), lat = mean(range(lat)))
-  
-
-ggplot(shp_tidy, mapping = aes(x = long, y = lat, group = group)) +
-  geom_polygon(color = "black", fill = NA) +
-  theme_void() +
-  geom_text(
-    data = shp_label,
-    mapping = aes(z = long, y = lat, label = id, group = NA),
-    cex = 2, 
-    color = "black"
-  )
-```
 
 
 
