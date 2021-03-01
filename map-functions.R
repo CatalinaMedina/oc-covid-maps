@@ -6,7 +6,7 @@ library(lubridate)
 library(viridis)
 library(TTR)
 library(ckanr)
-
+library(ggrepel)
 
 
 # prep-map-city-data-function ---------------------------------------------
@@ -226,7 +226,20 @@ prep_map_zip_data <- function(
 
 # gen-map-function --------------------------------------------------------
 ## Generates map of OC by geog_level ("zip" or "city") with plot_var as fill
-gen_map <- function(plot_data, shp, legend_label, geog_level, discrete_plot_var = TRUE) {
+gen_map <- function(
+    plot_data, 
+    shp, 
+    legend_label, 
+    geog_level, 
+    discrete_plot_var = TRUE,
+    add_geog_level_labels = FALSE,
+    size = 4, 
+    segment.color = "black",
+    segment.linetype = 2,
+    min.segment.length = 0,
+    segment.size = 0.75
+  ){
+  
   if (geog_level == "city") {
     plot_data$NAME <- plot_data$city
     shp_zip <- subset(shp, NAME %in% plot_data$NAME)
@@ -246,18 +259,40 @@ gen_map <- function(plot_data, shp, legend_label, geog_level, discrete_plot_var 
     summarize(long = mean(range(long)), lat = mean(range(lat)))
   
   # Produce map
-  final_map <- ggplot(shp_tidy, mapping = aes(x = long, y = lat, group = group, fill = plot_var)) +
-    geom_polygon(color = "black") +
+  final_map <- ggplot() +
+    geom_polygon(
+      data = shp_tidy, 
+      mapping = aes(x = long, y = lat, group = group, fill = plot_var), 
+      color = "black"
+    ) +
     labs(fill = legend_label) +
     theme_void() 
   
   if (discrete_plot_var) {
-    final_map +
+    final_map <- final_map +
       scale_fill_viridis(drop = FALSE, discrete = TRUE, direction = -1)
   } else {
-    final_map +
+    final_map <- final_map +
       scale_fill_viridis(direction = -1)
   }
+  
+  if (add_geog_level_labels) {
+    final_map <- final_map +
+      geom_text_repel(
+        data = shp_label,
+        mapping = aes(x = long, y = lat, label = id, group = NA),
+        force = 1.25,
+        point.padding = NA,
+        max.overlaps = 20,
+        size = size, 
+        segment.color = segment.color,
+        segment.linetype = segment.linetype,
+        min.segment.length = min.segment.length,
+        segment.size = segment.size
+      )
+  } 
+  
+  final_map
 }
 
 
@@ -271,7 +306,14 @@ map_cases <- function(
   geog_level,
   start_date, 
   end_date, 
-  cases_per = 100000 # Number of cases per cases_per people in zip per time frame
+  cases_per = 100000, # Number of cases per cases_per people in zip per time frame
+  discrete_plot_var = TRUE,
+  add_geog_level_labels = FALSE,
+  size = 4, 
+  segment.color = "black",
+  segment.linetype = 2,
+  min.segment.length = 0,
+  segment.size = 0.75
 ){
   
   legend_label <- paste0(
@@ -356,7 +398,14 @@ map_cases <- function(
     plot_data = plot_data, 
     shp = shp, 
     legend_label = legend_label, 
-    geog_level = geog_level
+    geog_level = geog_level,
+    discrete_plot_var = discrete_plot_var,
+    add_geog_level_labels = add_geog_level_labels,
+    size = size, 
+    segment.color = segment.color,
+    segment.linetype = segment.linetype,
+    min.segment.length = min.segment.length,
+    segment.size = segment.size
   )
 }
 
@@ -377,7 +426,14 @@ map_tests <- function(
   geog_level,
   start_date, 
   end_date, 
-  tests_per = 100000 # Number of cases per tests_per people in geog_level per time frame
+  tests_per = 100000, # Number of cases per tests_per people in geog_level per time frame
+  discrete_plot_var = TRUE,
+  add_geog_level_labels = FALSE,
+  size = 4, 
+  segment.color = "black",
+  segment.linetype = 2,
+  min.segment.length = 0,
+  segment.size = 0.75
 ){
   
   legend_label <- paste0(
@@ -464,7 +520,14 @@ map_tests <- function(
     plot_data = plot_data, 
     shp = shp, 
     legend_label = legend_label, 
-    geog_level = geog_level
+    geog_level = geog_level,
+    discrete_plot_var = discrete_plot_var,
+    add_geog_level_labels = add_geog_level_labels,
+    size = size, 
+    segment.color = segment.color,
+    segment.linetype = segment.linetype,
+    min.segment.length = min.segment.length,
+    segment.size = segment.size
   )
 }
 
@@ -481,7 +544,14 @@ map_per_pos <- function(
   map_data_list,
   geog_level,
   start_date, 
-  end_date  
+  end_date,
+  discrete_plot_var = TRUE,
+  add_geog_level_labels = FALSE,
+  size = 4, 
+  segment.color = "black",
+  segment.linetype = 2,
+  min.segment.length = 0,
+  segment.size = 0.75
 ){
   
   legend_label <- paste0(
@@ -562,6 +632,13 @@ map_per_pos <- function(
     plot_data = plot_data, 
     shp = shp, 
     legend_label = legend_label,
-    geog_level = geog_level
+    geog_level = geog_level,
+    discrete_plot_var = discrete_plot_var,
+    add_geog_level_labels = add_geog_level_labels,
+    size = size, 
+    segment.color = segment.color,
+    segment.linetype = segment.linetype,
+    min.segment.length = min.segment.length,
+    segment.size = segment.size
   )
 }
