@@ -23,7 +23,7 @@ library(viridis)
 library(TTR)
 library(ckanr)
 
-source(here("map-functions.R"))
+source("C:/Users/catal/Documents/research/covid-19-maps-web/map-functions.R")
 ```
 
 

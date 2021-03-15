@@ -19,7 +19,7 @@ library(here)
 library(lubridate)
 library(gridExtra)
 
-source(here("map-functions.R"))
+source("C:/Users/catal/Documents/research/covid-19-maps-web/map-functions.R")
 ```
 
 
