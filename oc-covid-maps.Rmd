@@ -29,62 +29,265 @@ source(here("map-functions.R"))
 
 ```{r actual-maps}
 # Downloading data and shape file takes about 30 seconds
-map_data_by_zip <- prep_map_zip_data()
-map_data_by_city <- prep_map_city_data()
-
-
-map_cases(
-  map_data_list = map_data_by_city, 
-  geog_level = "city",
-  start_date = as.Date("2021-02-15"), 
-  end_date = as.Date("2021-02-21")
+map_covid_data <- prep_map_data(
+  neg_line_list_file = here("data/covid-data", "All PCR tests updated 3.8.21.csv"),
+  line_list_file = here("data/covid-data", "3.8.21 release to UCI team.csv"),
+  return_covid_data = TRUE
 )
 
 map_cases(
-  map_data_list = map_data_by_city, 
+  map_data_list = map_covid_data, 
   geog_level = "city",
-  start_date = as.Date("2021-02-15"), 
-  end_date = as.Date("2021-02-21"),
-  add_geog_level_labels = TRUE
+  date_in_month = as.Date("2020/05/31")
 )
 
 map_cases(
-  map_data_list = map_data_by_zip, 
+  map_data_list = map_covid_data, 
   geog_level = "zip",
-  start_date = as.Date("2021-02-15"), 
-  end_date = as.Date("2021-02-21")
+  date_in_month = as.Date("2020/05/31")
 )
 
 map_tests(
-  map_data_list = map_data_by_city, 
-  start_date = as.Date("2021-02-15"),
+  map_data_list = map_covid_data, 
   geog_level = "city",
-  end_date = as.Date("2021-02-21")
+  date_in_month = as.Date("2020/05/31")
 )
 
 map_tests(
-  map_data_list = map_data_by_zip, 
+  map_data_list = map_covid_data, 
   geog_level = "zip",
-  start_date = as.Date("2021-02-15"), 
-  end_date = as.Date("2021-02-21")
+  date_in_month = as.Date("2020/05/31")
 )
 
 map_per_pos(
-  map_data_list = map_data_by_city, 
+  map_data_list = map_covid_data, 
   geog_level = "city",
-  start_date = as.Date("2021-02-15"), 
-  end_date = as.Date("2021-02-21")
+  date_in_month = as.Date("2020/05/31")
 )
 
 map_per_pos(
-  map_data_list = map_data_by_zip, 
+  map_data_list = map_covid_data, 
   geog_level = "zip",
-  start_date = as.Date("2021-02-15"), 
-  end_date = as.Date("2021-02-21")
+  date_in_month = as.Date("2020/05/31")
 )
 ```
 
 
 
 
+```{r, eval = FALSE, echo = FALSE}
+library(sf)
+library(ggspatial)
+
+all_shp <- st_read(here("data/shape-files", "Zipcode_boundary_scag_2009.shp"))
+  
+all_city_shp1 <- all_shp %>% 
+  group_by(NAME) %>% 
+  summarize()
+
+all_zip_shp1 <- all_shp1 %>% # Plot for entire area of shape file
+  left_join(plot_data, by = c("NAME" = "city")) %>% 
+    mutate(ID = NAME)
+
+oc_zip_shp1 <- all_shp1 %>% # Only want names for OC cities
+    right_join(plot_data, by = c("NAME" = "city")) %>% 
+    mutate(ID = NAME)  
+
+####
+
+shp_merged_all <- shp %>% # Plot for entire area of shape file
+  left_join(plot_data, by = c("NAME" = "city")) %>% 
+    mutate(ID = NAME)
+
+shp_merged_oc <- shp %>% # Only want names for OC cities
+    right_join(plot_data, by = c("NAME" = "city")) %>% 
+    mutate(ID = NAME)
+
+ggplot(shp_merged_all, aes(fill = plot_var)) +
+  geom_sf()
+
+ggplot(shp_merged_all) +
+  geom_sf(aes(group = NAME), fill = "khaki1", color = "gray60") +
+  geom_sf(
+    data = shp_merged_oc, 
+    mapping = aes(fill = plot_var, group = NAME), 
+    color = "black"
+  ) +
+  geom_sf(data = roads_shp) +
+  coord_sf( # Outlines Orange County
+    xlim = c(396639.2, 461568.2), 
+    ylim = c(3694363, 3759819), 
+    expand = FALSE
+  ) +
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(
+    location = "bl", 
+    which_north = "true", 
+    pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
+    style = north_arrow_fancy_orienteering
+  )  +
+  labs(fill = legend_label) +
+  theme_void() +
+  scale_fill_viridis(drop = FALSE, discrete = TRUE, direction = -1) 
+```
+
+
+```{r produce-city-map-w-roads}
+#month_year <- paste0(month(month1))
+legend_label <- paste0("Reported cases\nper 100,000")
+
+roads_shp <- st_read(here("data/shape-files1", "tl_2015_06_prisecroads.shp")) %>% 
+  subset(RTTYP == "I")
+
+all_shp <- st_read(here("data/shape-files", "Zipcode_boundary_scag_2009.shp"))
+  
+all_shp1 <- all_shp %>% 
+  group_by(NAME) %>% 
+  summarize()
+
+#shp_labels <- cbind(all_shp1, st_coordinates(st_centroid(all_shp1))) 
+
+all_city_shp1 <- all_shp1 %>% # Plot for entire area of shape file
+  left_join(plot_data, by = c("NAME" = "city")) %>% 
+    mutate(ID = NAME)
+
+oc_city_shp1 <- all_shp1 %>% # Only want names for OC cities
+    right_join(plot_data, by = c("NAME" = "city")) %>% 
+    mutate(ID = NAME)  
+
+# Plot of cities with roads and UCI
+ggplot(all_city_shp1) +
+  geom_sf(fill = "khaki1", color = "gray60") +
+  geom_sf(data = oc_city_shp1, color = "black", fill = "khaki1") +
+  geom_sf(data = roads_shp, color = "gray", fill = "white", size = 1) +
+  coord_sf( # Outlines Orange County
+    xlim = c(396639.2, 461568.2), 
+    ylim = c(3694363, 3759819), 
+    expand = FALSE
+  ) +
+  annotation_scale(location = "bl", width_hint = 0.5) +
+  annotation_north_arrow(
+    location = "bl", 
+    which_north = "true", 
+    pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
+    style = north_arrow_fancy_orienteering
+  )  +
+  theme_void() +
+  geom_sf_text(
+    data = oc_city_shp1, mapping = aes(label = NAME), 
+    size = 2, color = "darkgreen"
+  ) +
+  annotate( # UCI label
+    geom = "text",
+    x = 424500,
+    y = 3725000,
+    label = "UC Irvine",
+    color = "blue",
+    size = 3,
+    fontface="bold"
+  ) +
+  annotate( # UCI point
+    geom = "point",
+    x = 422000,
+    y = 3723000,
+    color = "blue",
+    size = 3,
+    pch = 17
+  ) +
+  annotate( # I-15 label
+    geom = "text",
+    x = 456000,
+    y = 3740000,
+    label = "I-15",
+    color = "black",
+    size = 3,
+    fontface="bold"
+  ) +
+  annotate( # I-405 label
+    geom = "text",
+    x = 422000,
+    y = 3727500,
+    label = "I-405",
+    color = "black",
+    size = 3,
+    fontface="bold"
+  ) +
+  annotate( # I-5 label
+    geom = "text",
+    x = 430000,
+    y = 3730000,
+    label = "I-5",
+    color = "black",
+    size = 3,
+    fontface="bold"
+  ) +
+  annotate( # I-5 label
+    geom = "text",
+    x = 403250,
+    y = 3753500,
+    label = "I-5",
+    color = "black",
+    size = 3,
+    fontface="bold"
+  ) +
+  annotate( # I-605 label
+    geom = "text",
+    x = 400000,
+    y = 3750000,
+    label = "I-605",
+    color = "black",
+    size = 3,
+    fontface="bold"
+  )
+
+
+ggplot(all_city_shp1) +
+  geom_sf(fill = "khaki1", color = "gray60") +
+  geom_sf(
+    data = oc_city_shp1, 
+    mapping = aes(fill = plot_var, group = NAME), 
+    color = "black"
+  ) +
+  coord_sf( # Outlines Orange County
+    xlim = c(396639.2, 461568.2), 
+    ylim = c(3694363, 3759819), 
+    expand = FALSE
+  ) +
+  labs(fill = legend_label) +
+  theme_void() +
+  theme(
+    panel.background = element_rect(fill = "darkslategray2"),
+    #legend.position = "bl",
+    legend.justification = c(0, 0),
+    legend.position = c(0.01, 0.01),
+    legend.background = element_rect(fill = "white"),
+    legend.title = element_text(size = 5, color = "black"),
+    legend.text = element_text(size = 5, color = "black"),
+    legend.margin = margin(1, 1, 1, 1),
+    panel.border = element_rect(colour = "black", fill=NA)
+  ) +
+  #opts(legend.justification = c(0, 0), legend.position = c(0, 0)) +
+  scale_fill_viridis(drop = FALSE, discrete = TRUE, direction = -1) +
+  annotation_scale(
+    location = "br", 
+    width_hint = 0.2,
+    pad_x = unit(0.25, "cm"),
+    pad_y = unit(0.25, "cm")
+  ) +
+  annotation_north_arrow(
+    location = "br", 
+    which_north = "true", 
+    pad_x = unit(0.5, "cm"), pad_y = unit(0.5, "cm"),
+    style = north_arrow_fancy_orienteering
+  ) +
+  annotate(
+    geom = "text",
+    x = ,
+    y = ,
+    label = month_year,
+    color = "black",
+    size = 5,
+    fontface="bold"
+  )
+```
 
