@@ -1,41 +1,41 @@
 library(tidyverse)
-library(rgdal)
+#library(rgdal)
 library(broom)
 library(here)
 library(lubridate)
 library(viridis)
 library(TTR)
-library(ckanr)
+#library(ckanr)
 library(ggrepel)
+#if (!require("gpclib")) install.packages("gpclib", type="source");
+#library(gpclib)
+library(sf)
+library(ggspatial)
 
-
-# prep-map-city-data-function ---------------------------------------------
+# prep-map-data-function ---------------------------------------------
 ## Reads in
 ## - line list data with all positive cases in OC
 ## - negative line list data with all tests done in OC
 ## - zip code file with zip codes, cities, and population data for OC
 ## - shape file for area including and surrounding OC
-## Returns list including file with new cases, new tests and new deaths by date for each city
+## Returns list including file with new cases, new tests and new deaths by date for each city and zip
 
-prep_map_city_data <- function(
-  neg_line_list_file = here("data/covid-data", "All PCR tests updated 2.22.21.csv"),
-  line_list_file = here("data/covid-data", "2.22.21 release to UCI team.csv"), 
-  zip_code_file = here("data", "zipcode.csv"),
-  shp_file = here("data/shape-files"),
-  return_covid_data = TRUE
+prep_map_data <- function(
+    return_covid_data = FALSE,
+    neg_line_list_file = here("data/covid-data", "All PCR tests updated 2.22.21.csv"),
+    line_list_file = here("data/covid-data", "2.22.21 release to UCI team.csv"), 
+    zip_code_file = here("data", "zipcode.csv"),
+    shp_file = here("data/shape-files", "Zipcode_boundary_scag_2009.shp")
   ){
   
-  oc_cities <- read_csv(zip_code_file, col_types = cols(Zip = col_character())) %>%
-    rename_all(str_to_lower) %>% 
+  oc_zips <- read_csv(zip_code_file, col_types = cols(Zip = col_character())) %>%
+    rename_all(str_to_lower) 
+  
+  oc_cities <- oc_zips %>%
     group_by(city) %>%
     summarize(zip = list(zip), population = sum(population))
   
-  
-  shp <- readOGR(
-    dsn = shp_file, 
-    verbose = FALSE,
-    layer = "Zipcode_boundary_scag_2009"
-  )
+  shp <- st_read(shp_file)
   
   
   if (return_covid_data) {
@@ -89,131 +89,46 @@ prep_map_city_data <- function(
       distinct()
     
     neg_line_list_filtered_city <- neg_line_list_filtered %>%
-      right_join(oc_cities %>%  unnest(zip)) %>%
-      count(posted_date, test_result, city) %>%
-      pivot_wider(names_from = test_result, values_from = n) 
-    
+        right_join(oc_cities %>%  unnest(zip)) %>%
+        count(posted_date, test_result, city) %>%
+        pivot_wider(names_from = test_result, values_from = n) 
+      
     new_deaths_tbl_city <- new_deaths_tbl %>%
-      right_join(oc_cities %>%  unnest(zip)) %>%
-      drop_na() %>%
-      count(posted_date, city, wt = new_deaths, name = "new_deaths")
-    
-    covid_data <- full_join(neg_line_list_filtered_city, new_deaths_tbl_city) %>%
-      replace(is.na(.), 0) %>%
-      mutate(new_cases = positive, new_tests = negative + positive + other) %>%
-      select(posted_date, city, new_cases, new_tests, new_deaths) %>%
-      arrange(city, posted_date) 
-    
-    return(list(
-      "covid_data" = covid_data,
-      "oc_data" = oc_cities,
-      "shp" = shp
-    ))
+        right_join(oc_cities %>%  unnest(zip)) %>%
+        drop_na() %>%
+        count(posted_date, city, wt = new_deaths, name = "new_deaths")
+      
+    covid_city_data <- full_join(neg_line_list_filtered_city, new_deaths_tbl_city) %>%
+        replace(is.na(.), 0) %>%
+        mutate(new_cases = positive, new_tests = negative + positive + other) %>%
+        select(posted_date, city, new_cases, new_tests, new_deaths) %>%
+        arrange(city, posted_date) 
+      
+    neg_line_list_filtered_zip <- neg_line_list_filtered %>%
+        right_join(oc_zips) %>%
+        count(posted_date, test_result, zip) %>%
+        pivot_wider(names_from = test_result, values_from = n) 
+      
+    new_deaths_tbl_zip <- new_deaths_tbl %>%
+        right_join(oc_zips) %>%
+        drop_na() %>%
+        count(posted_date, zip, wt = new_deaths, name = "new_deaths")
+      
+    covid_zip_data <- full_join(neg_line_list_filtered_zip, new_deaths_tbl_zip) %>%
+        replace(is.na(.), 0) %>%
+        mutate(new_cases = positive, new_tests = negative + positive + other) %>%
+        select(posted_date, zip, new_cases, new_tests, new_deaths) %>%
+        arrange(zip, posted_date) 
   } else {
-    return(list(
-      "oc_data" = oc_cities,
-      "shp" = shp
-    ))
+    covid_city_data = NULL
+    covid_zip_data = NULL
   }
-
-}
-
-
-
-
-# prep-map-zip-data-function ----------------------------------------------
-## Reads in
-## - line list data with all positive cases in OC
-## - negative line list data with all tests done in OC
-## - zip code file with zip codes, cities, and population data for OC
-## - shape file for area including and surrounding OC
-## Returns list including file with new cases, new tests and new deaths by date for each zip code
-prep_map_zip_data <- function(
-  neg_line_list_file = here("data/covid-data", "All PCR tests updated 2.22.21.csv"),
-  line_list_file = here("data/covid-data", "2.22.21 release to UCI team.csv"), 
-  zip_code_file = here("data", "zipcode.csv"),
-  shp_file = here("data/shape-files")
-  ){
-  
-  neg_line_list <- read_csv(neg_line_list_file) %>% 
-    mutate(Specimen.Collected.Date = as.Date(Specimen.Collected.Date, format = "%m-%d-%Y")) %>% 
-    select(
-      id = IncidentID, 
-      posted_date = Specimen.Collected.Date, 
-      test_result = TestResult, 
-      zip = Zip
-    ) %>% 
-    mutate(test_result = tolower(test_result)) %>% 
-    mutate(test_result = factor(case_when(
-      test_result == "positive" ~ "positive",
-      test_result == "negative" ~ "negative",
-      test_result == "inconclusive" | test_result == "invalid" ~ "other"
-    ))) %>% 
-    filter(!is.na(test_result)) %>% 
-    mutate(zip = str_sub(zip, end = 5)) %>%
-    filter(posted_date >= ymd("2020-01-01")) %>%
-    drop_na() %>%
-    group_by(id) %>%
-    arrange(posted_date) %>%
-    ungroup()
-  
-  
-  new_deaths_tbl <- read_csv(
-    line_list_file,
-    col_types = cols(
-      .default = col_skip(),
-      `DtDeath` = col_date("%Y-%m-%d"),
-      `DeathDueCOVID` = col_character(),
-      Zip = col_character()
-    )) %>%
-    drop_na() %>%
-    select(posted_date = `DtDeath`, zip = Zip) %>%
-    count(posted_date, zip, name = "new_deaths") %>%
-    arrange(posted_date)
-  
-  
-  first_pos <- neg_line_list %>%
-    filter(test_result == "positive") %>%
-    group_by(id) %>%
-    summarise(first_pos = min(posted_date))
-  
-  neg_line_list_filtered <- left_join(neg_line_list, first_pos) %>%
-    mutate(first_pos = replace_na(first_pos, lubridate::ymd("9999-12-31"))) %>%
-    filter(posted_date <= first_pos) %>%
-    select(-first_pos) %>%
-    distinct()
-  
-  oc_zips <- read_csv(zip_code_file, col_types = cols(Zip = col_character())) %>%
-    rename_all(str_to_lower) 
-  
-  neg_line_list_filtered_zip <- neg_line_list_filtered %>%
-    right_join(oc_zips) %>%
-    count(posted_date, test_result, zip) %>%
-    pivot_wider(names_from = test_result, values_from = n) 
-  
-  new_deaths_tbl_zip <- new_deaths_tbl %>%
-    right_join(oc_zips) %>%
-    drop_na() %>%
-    count(posted_date, zip, wt = new_deaths, name = "new_deaths")
-  
-  covid_data_by_zip <- full_join(neg_line_list_filtered_zip, new_deaths_tbl_zip) %>%
-    replace(is.na(.), 0) %>%
-    mutate(new_cases = positive, new_tests = negative + positive + other) %>%
-    select(posted_date, zip, new_cases, new_tests, new_deaths) %>%
-    arrange(zip, posted_date) 
-  
-  
-  # load and work shp file
-  shp <- readOGR(
-    dsn = shp_file, 
-    verbose = FALSE,
-    layer = "Zipcode_boundary_scag_2009"
-  )
-  
-  
+    
   return(list(
-    "covid_data_by_zip" = covid_data_by_zip,
-    "oc_data" = oc_zips,
+    "covid_city_data" = covid_city_data,
+    "covid_zip_data" = covid_zip_data,
+    "oc_cities" = oc_cities,
+    "oc_zips" = oc_zips,
     "shp" = shp
   ))
 }
@@ -224,49 +139,210 @@ prep_map_zip_data <- function(
 
 
 
+# gen-city-map-labeled -----------------------------------------------------
+gen_city_map_labeled <- function(
+    shp_file = here("data/shape-files", "Zipcode_boundary_scag_2009.shp"),
+    road_shp_file = here("data/shape-files1", "tl_2015_06_prisecroads.shp"),
+    zip_code_file = here("data", "zipcode.csv")
+  ) {
+  
+  oc_zips <- read_csv(zip_code_file, col_types = cols(Zip = col_character())) %>%
+    rename_all(str_to_lower) 
+  
+  oc_cities <- oc_zips %>% 
+    group_by(city) %>%
+    summarize(population = sum(population))
+  
+  
+  roads_shp <- st_read(road_shp_file) %>% 
+    subset(RTTYP == "I")
+  
+  
+  all_shp <- st_read(shp_file)
+  
+  all_shp1 <- all_shp %>% 
+    group_by(NAME) %>% 
+    summarize()
+  
+  all_city_shp1 <- all_shp1 %>% # Plot for entire area of shape file
+    left_join(oc_cities, by = c("NAME" = "city")) %>% 
+    mutate(ID = NAME)
+  
+  oc_city_shp1 <- all_shp1 %>% # Only want names for OC cities
+    right_join(oc_cities, by = c("NAME" = "city")) %>% 
+    mutate(ID = NAME)
+  
+  
+  # Plot of cities with roads and UCI
+  ggplot(all_city_shp1) +
+    geom_sf(fill = "khaki1", color = "gray60") +
+    geom_sf(data = oc_city_shp1, color = "black", fill = "khaki1") +
+    geom_sf(data = roads_shp, color = "gray", fill = "white", size = 1) +
+    coord_sf( # Outlines Orange County
+      xlim = c(396639.2, 461568.2), 
+      ylim = c(3694363, 3759819), 
+      expand = FALSE
+    ) +
+    annotation_scale(location = "bl", width_hint = 0.5) +
+    annotation_north_arrow(
+      location = "bl", 
+      which_north = "true", 
+      pad_x = unit(0.75, "in"), pad_y = unit(0.5, "in"),
+      style = north_arrow_fancy_orienteering
+    )  +
+    theme_void() +
+    geom_sf_text(
+      data = oc_city_shp1, mapping = aes(label = NAME), 
+      size = 3, color = "darkgreen"
+    ) +
+    annotate( # UCI label
+      geom = "text",
+      x = 424250,
+      y = 3724500,
+      label = "UC Irvine",
+      color = "blue",
+      size = 3,
+      fontface="bold"
+    ) +
+    annotate( # UCI point
+      geom = "point",
+      x = 422000,
+      y = 3723000,
+      color = "blue",
+      size = 3,
+      pch = 17
+    ) +
+    annotate( # I-15 label
+      geom = "text",
+      x = 456000,
+      y = 3740000,
+      label = "I-15",
+      color = "black",
+      size = 3,
+      fontface="bold"
+    ) +
+    annotate( # I-405 label
+      geom = "text",
+      x = 422000,
+      y = 3727500,
+      label = "I-405",
+      color = "black",
+      size = 3,
+      fontface="bold"
+    ) +
+    annotate( # I-5 label
+      geom = "text",
+      x = 430000,
+      y = 3730000,
+      label = "I-5",
+      color = "black",
+      size = 3,
+      fontface="bold"
+    ) +
+    annotate( # I-5 label
+      geom = "text",
+      x = 403250,
+      y = 3753500,
+      label = "I-5",
+      color = "black",
+      size = 3,
+      fontface="bold"
+    ) +
+    annotate( # I-605 label
+      geom = "text",
+      x = 400000,
+      y = 3750000,
+      label = "I-605",
+      color = "black",
+      size = 3,
+      fontface="bold"
+    )
+  
+  
+  
+}
+
+
+
+
 # gen-map-function --------------------------------------------------------
-## Generates map of OC by geog_level ("zip" or "city") with plot_var as fill
 gen_map <- function(
     plot_data, 
     shp, 
     legend_label, 
+    month_year,
     geog_level, 
-    discrete_plot_var = TRUE,
-    add_geog_level_labels = FALSE,
-    size = 4, 
-    segment.color = "black",
-    segment.linetype = 2,
-    min.segment.length = 0,
-    segment.size = 0.75
+    discrete_plot_var = TRUE
   ){
   
   if (geog_level == "city") {
-    plot_data$NAME <- plot_data$city
-    shp_zip <- subset(shp, NAME %in% plot_data$NAME)
-    shp_tidy <- tidy(shp_zip, region = "NAME") %>% 
-      mutate(NAME = id) %>% 
-      inner_join(plot_data, by = "NAME")
+    shp1 <- shp %>% 
+      group_by(NAME) %>% 
+      summarize()
+    
+    all_shp1 <- shp1 %>% # Plot for entire area of shape file
+      left_join(plot_data, by = c("NAME" = "city")) %>% 
+      mutate(ID = NAME)
+    
+    oc_shp1 <- shp1 %>% # Only want names for OC cities
+      right_join(plot_data, by = c("NAME" = "city")) %>% 
+      mutate(ID = NAME)
   } else if (geog_level == "zip") {
-    plot_data$KEY_ <- plot_data$zip
-    shp_zip <- subset(shp, KEY_ %in% plot_data$KEY_)
-    shp_tidy <- tidy(shp_zip, region = "KEY_") %>% 
-      mutate(KEY_ = id) %>% 
-      inner_join(plot_data, by = "KEY_")
+    all_shp1 <- shp %>% # Plot for entire area of shape file
+      left_join(plot_data, by = c("KEY_" = "zip")) %>% 
+      mutate(ID = KEY_)
+    
+    oc_shp1 <- shp %>% # Only want names for OC cities
+      right_join(plot_data, by = c("KEY_" = "zip")) %>% 
+      mutate(ID = KEY_)
   }
   
-  shp_label <- shp_tidy %>% 
-    group_by(id) %>% 
-    summarize(long = mean(range(long)), lat = mean(range(lat)))
-  
-  # Produce map
-  final_map <- ggplot() +
-    geom_polygon(
-      data = shp_tidy, 
-      mapping = aes(x = long, y = lat, group = group, fill = plot_var), 
+  final_map <- ggplot(all_shp1) +
+    geom_sf(fill = "khaki1", color = "gray60") +
+    geom_sf(
+      data = oc_shp1, 
+      mapping = aes(fill = plot_var, group = NAME), 
       color = "black"
     ) +
+    coord_sf( # Outlines Orange County
+      xlim = c(396639.2, 461568.2), 
+      ylim = c(3694363, 3759819), 
+      expand = FALSE
+    ) +
     labs(fill = legend_label) +
-    theme_void() 
+    theme_void() +
+    theme(
+      panel.background = element_rect(fill = "darkslategray2"),
+      #legend.position = "bl",
+      legend.justification = c(0, 0),
+      legend.position = c(0.01, 0.01),
+      legend.background = element_rect(fill = "white"),
+      # legend.title = element_text(size = 5, color = "black"),
+      # legend.text = element_text(size = 5, color = "black"),
+      legend.margin = margin(1, 1, 1, 1),
+      panel.border = element_rect(colour = "black", fill=NA)
+    ) +
+    annotation_scale(
+      location = "br", 
+      width_hint = 0.2,
+      pad_x = unit(0.25, "cm"),
+      pad_y = unit(0.25, "cm")
+    ) +
+    annotation_north_arrow(
+      location = "br", 
+      which_north = "true", 
+      pad_x = unit(0.5, "cm"), pad_y = unit(0.5, "cm"),
+      style = north_arrow_fancy_orienteering
+    ) +
+    annotate(
+      geom = "text",
+      x = 450000,
+      y = 3755000,
+      label = month_year,
+      color = "black",
+      size = 7,
+      fontface="bold"
+    )
   
   if (discrete_plot_var) {
     final_map <- final_map +
@@ -276,27 +352,8 @@ gen_map <- function(
       scale_fill_viridis(direction = -1)
   }
   
-  if (add_geog_level_labels) {
-    final_map <- final_map +
-      geom_text_repel(
-        data = shp_label,
-        mapping = aes(x = long, y = lat, label = id, group = NA),
-        force = 1.25,
-        point.padding = NA,
-        max.overlaps = 20,
-        size = size, 
-        segment.color = segment.color,
-        segment.linetype = segment.linetype,
-        min.segment.length = min.segment.length,
-        segment.size = segment.size
-      )
-  } 
-  
   final_map
 }
-
-
-
 
 
 # map-cases-function ------------------------------------------------------
@@ -304,43 +361,42 @@ gen_map <- function(
 map_cases <- function( 
   map_data_list,
   geog_level,
-  start_date, 
-  end_date, 
+  date_in_month, 
   cases_per = 100000, # Number of cases per cases_per people in zip per time frame
-  discrete_plot_var = TRUE,
-  add_geog_level_labels = FALSE,
-  size = 4, 
-  segment.color = "black",
-  segment.linetype = 2,
-  min.segment.length = 0,
-  segment.size = 0.75
+  discrete_plot_var = TRUE
 ){
   
   legend_label <- paste0(
-    "Reported cases per ",
+    "Reported cases per\n",
     prettyNum(cases_per, big.mark = ",", scientific = FALSE),
-    "\npeople from\n",
-    as.character(start_date, format = "%m/%d/%Y"),
-    " to ",
-    as.character(end_date, format = "%m/%d/%Y")
+    " people"
   )
   
-  covid_data <- map_data_list$covid_data
-  oc_data <- map_data_list$oc_data
-  shp <- map_data_list$shp
+  if (is.null(map_data_list$oc_cities) | is.null(map_data_list$oc_zips)) {
+    stop("Missing zip/city file in map_data_list")
+  } else if (geog_level == "city") {
+    oc_data <- map_data_list$oc_cities
+    covid_data <- map_data_list$covid_city_data
+  } else if (geog_level == "zip") {
+    oc_data <- map_data_list$oc_zips
+    covid_data <- map_data_list$covid_zip_data
+  }
   
-  if (sum(covid_data$posted_date == start_date) < 1) {
+  if (sum(range(covid_data$posted_date)[1] <= date_in_month) == 0) {
     stop("start_date is out of range")
-  } else if (sum(covid_data$posted_date == end_date) < 1) {
+  } else if (sum(range(covid_data$posted_date)[2] >= date_in_month) == 0) {
     stop("end_date is out of range")
   }
+  
+  shp <- map_data_list$shp
   
   oc_data$scaled_pop <- oc_data$population / cases_per
   
   
   if (geog_level == "city") {
     plot_data <- covid_data %>% 
-      filter(posted_date >= start_date & posted_date <= end_date) %>% 
+      filter(month(posted_date) == month(date_in_month)) %>% 
+      filter(year(posted_date) == year(date_in_month)) %>%
       group_by(city) %>% 
       summarize(new_cases_in_frame = sum(new_cases)) %>% 
       inner_join(oc_data, by = "city") %>% 
@@ -348,26 +404,27 @@ map_cases <- function(
       mutate(plot_var = factor(
         case_when(
           new_cases_scaled <= 5 ~ "0-5",
-          new_cases_scaled <= 25 ~ "5-25",
-          new_cases_scaled <= 50 ~ "25-50",
-          new_cases_scaled <= 100 ~ "50-100",
-          new_cases_scaled <= 250 ~ "100-250",
-          new_cases_scaled <= 500 ~ "250-500",
-          new_cases_scaled > 500 ~ ">500"
+          new_cases_scaled <= 30 ~ "5-30",
+          new_cases_scaled <= 60 ~ "30-60",
+          new_cases_scaled <= 120 ~ "60-120",
+          new_cases_scaled <= 240 ~ "120-240",
+          new_cases_scaled <= 480 ~ "240-480",
+          new_cases_scaled > 480 ~ ">480"
         ),
         levels = c(
           "0-5",
-          "5-25",
-          "25-50",
-          "50-100",
-          "100-250",
-          "250-500",
-          ">500"
+          "5-30",
+          "30-60",
+          "60-120",
+          "120-240",
+          "240-480",
+          ">480"
         ))) %>% 
       select(city, plot_var)
   } else if (geog_level == "zip") {
     plot_data <- covid_data %>% 
-      filter(posted_date >= start_date & posted_date <= end_date) %>% 
+      filter(month(posted_date) == month(date_in_month)) %>% 
+      filter(year(posted_date) == year(date_in_month)) %>%
       group_by(zip) %>% 
       summarize(new_cases_in_frame = sum(new_cases)) %>% 
       inner_join(oc_data, by = "zip") %>% 
@@ -375,21 +432,21 @@ map_cases <- function(
       mutate(plot_var = factor(
         case_when(
           new_cases_scaled <= 5 ~ "0-5",
-          new_cases_scaled <= 25 ~ "5-25",
-          new_cases_scaled <= 50 ~ "25-50",
-          new_cases_scaled <= 100 ~ "50-100",
-          new_cases_scaled <= 250 ~ "100-250",
-          new_cases_scaled <= 500 ~ "250-500",
-          new_cases_scaled > 500 ~ ">500"
+          new_cases_scaled <= 30 ~ "5-30",
+          new_cases_scaled <= 60 ~ "30-60",
+          new_cases_scaled <= 120 ~ "60-120",
+          new_cases_scaled <= 240 ~ "120-240",
+          new_cases_scaled <= 480 ~ "240-480",
+          new_cases_scaled > 480 ~ ">480"
         ),
         levels = c(
           "0-5",
-          "5-25",
-          "25-50",
-          "50-100",
-          "100-250",
-          "250-500",
-          ">500"
+          "5-30",
+          "30-60",
+          "60-120",
+          "120-240",
+          "240-480",
+          ">480"
         ))) %>% 
       select(zip, plot_var)  
   }
@@ -398,14 +455,9 @@ map_cases <- function(
     plot_data = plot_data, 
     shp = shp, 
     legend_label = legend_label, 
+    month_year = paste0(month(date_in_month, label = TRUE), " ", year(date_in_month)),
     geog_level = geog_level,
-    discrete_plot_var = discrete_plot_var,
-    add_geog_level_labels = add_geog_level_labels,
-    size = size, 
-    segment.color = segment.color,
-    segment.linetype = segment.linetype,
-    min.segment.length = min.segment.length,
-    segment.size = segment.size
+    discrete_plot_var = discrete_plot_var
   )
 }
 
@@ -424,34 +476,33 @@ map_cases <- function(
 map_tests <- function( 
   map_data_list,
   geog_level,
-  start_date, 
-  end_date, 
+  date_in_month, 
   tests_per = 100000, # Number of cases per tests_per people in geog_level per time frame
-  discrete_plot_var = TRUE,
-  add_geog_level_labels = FALSE,
-  size = 4, 
-  segment.color = "black",
-  segment.linetype = 2,
-  min.segment.length = 0,
-  segment.size = 0.75
+  discrete_plot_var = TRUE
 ){
   
   legend_label <- paste0(
-    "Reported tests per ", 
+    "Tests per\n", 
     prettyNum(tests_per, big.mark = ",", scientific = FALSE), 
-    "\npeople from\n", 
-    as.character(start_date, format = "%m/%d/%Y"),
-    " to ",
-    as.character(end_date, format = "%m/%d/%Y")
+    " people"
   )
   
-  covid_data <- map_data_list$covid_data
-  oc_data <- map_data_list$oc_data
+  
+  if (is.null(map_data_list$oc_cities) | is.null(map_data_list$oc_zips)) {
+    stop("Missing zip/city file in map_data_list")
+  } else if (geog_level == "city") {
+    oc_data <- map_data_list$oc_cities
+    covid_data <- map_data_list$covid_city_data
+  } else if (geog_level == "zip") {
+    oc_data <- map_data_list$oc_zips
+    covid_data <- map_data_list$covid_zip_data
+  }
+  
   shp <- map_data_list$shp
   
-  if (sum(covid_data$posted_date == start_date) < 1) {
+  if (sum(range(covid_data$posted_date)[1] <= date_in_month) == 0) {
     stop("start_date is out of range")
-  } else if (sum(covid_data$posted_date == end_date) < 1) {
+  } else if (sum(range(covid_data$posted_date)[2] >= date_in_month) == 0) {
     stop("end_date is out of range")
   }
   
@@ -460,7 +511,8 @@ map_tests <- function(
   
   if(geog_level == "city"){
     plot_data <- covid_data %>% 
-      filter(posted_date >= start_date & posted_date <= end_date) %>% 
+      filter(month(posted_date) == month(date_in_month)) %>% 
+      filter(year(posted_date) == year(date_in_month)) %>%
       group_by(city) %>% 
       summarize(new_tests_in_frame = sum(new_tests)) %>% 
       inner_join(oc_data, by = "city") %>% 
@@ -468,27 +520,26 @@ map_tests <- function(
       mutate(plot_var = factor(
         case_when(
           new_tests_scaled <= 100 ~ "0-100",
-          new_tests_scaled <= 250 ~ "100-250",
-          new_tests_scaled <= 500 ~ "250-500",
-          new_tests_scaled <= 1000 ~ "500-1000",
-          new_tests_scaled <= 2500 ~ "1000-2500",
-          new_tests_scaled <= 5000 ~ "2500-5000",
-          new_tests_scaled >5000 ~ ">5000"
+          new_tests_scaled <= 200 ~ "100-200",
+          new_tests_scaled <= 600 ~ "200-600",
+          new_tests_scaled <= 1200 ~ "600-1200",
+          new_tests_scaled <= 2400 ~ "1200-2400",
+          new_tests_scaled > 2400 ~ ">2400"
         ),
         levels = c(
           "0-100", 
-          "100-250", 
-          "250-500", 
-          "500-1000", 
-          "1000-2500", 
-          "2500-5000", 
-          ">5000"
+          "100-200", 
+          "200-600", 
+          "600-1200", 
+          "1200-2400", 
+          ">2400"
         )
       )) %>% 
       select(city, plot_var)
   } else if(geog_level == "zip"){
     plot_data <- covid_data %>% 
-      filter(posted_date >= start_date & posted_date <= end_date) %>% 
+      filter(month(posted_date) == month(date_in_month)) %>% 
+      filter(year(posted_date) == year(date_in_month)) %>%
       group_by(zip) %>% 
       summarize(new_tests_in_frame = sum(new_tests)) %>% 
       inner_join(oc_data, by = "zip") %>% 
@@ -496,21 +547,19 @@ map_tests <- function(
       mutate(plot_var = factor(
         case_when(
           new_tests_scaled <= 100 ~ "0-100",
-          new_tests_scaled <= 250 ~ "100-250",
-          new_tests_scaled <= 500 ~ "250-500",
-          new_tests_scaled <= 1000 ~ "500-1000",
-          new_tests_scaled <= 2500 ~ "1000-2500",
-          new_tests_scaled <= 5000 ~ "2500-5000",
-          new_tests_scaled >5000 ~ ">5000"
+          new_tests_scaled <= 200 ~ "100-200",
+          new_tests_scaled <= 600 ~ "200-600",
+          new_tests_scaled <= 1200 ~ "600-1200",
+          new_tests_scaled <= 2400 ~ "1200-2400",
+          new_tests_scaled > 2400 ~ ">2400"
         ),
         levels = c(
           "0-100", 
-          "100-250", 
-          "250-500", 
-          "500-1000", 
-          "1000-2500", 
-          "2500-5000", 
-          ">5000"
+          "100-200", 
+          "200-600", 
+          "600-1200", 
+          "1200-2400", 
+          ">2400"
         )
       )) %>% 
       select(zip, plot_var)
@@ -520,14 +569,9 @@ map_tests <- function(
     plot_data = plot_data, 
     shp = shp, 
     legend_label = legend_label, 
+    month_year = paste0(month(date_in_month, label = TRUE), " ", year(date_in_month)),
     geog_level = geog_level,
-    discrete_plot_var = discrete_plot_var,
-    add_geog_level_labels = add_geog_level_labels,
-    size = size, 
-    segment.color = segment.color,
-    segment.linetype = segment.linetype,
-    min.segment.length = min.segment.length,
-    segment.size = segment.size
+    discrete_plot_var = discrete_plot_var
   )
 }
 
@@ -543,85 +587,79 @@ map_tests <- function(
 map_per_pos <- function( 
   map_data_list,
   geog_level,
-  start_date, 
-  end_date,
-  discrete_plot_var = TRUE,
-  add_geog_level_labels = FALSE,
-  size = 4, 
-  segment.color = "black",
-  segment.linetype = 2,
-  min.segment.length = 0,
-  segment.size = 0.75
+  date_in_month,
+  discrete_plot_var = TRUE
 ){
   
-  legend_label <- paste0(
-    "Percent of COVID-19\ntest positive from\n", 
-    as.character(start_date, format = "%m/%d/%Y"),
-    " to ",
-    as.character(end_date, format = "%m/%d/%Y")
-  )
+  legend_label <- paste0("Percent of COVID-19\ntest positive")
   
-  covid_data <- map_data_list$covid_data
-  oc_data <- map_data_list$oc_data
+  if (is.null(map_data_list$oc_cities) | is.null(map_data_list$oc_zips)) {
+    stop("Missing zip/city file in map_data_list")
+  } else if (geog_level == "city") {
+    oc_data <- map_data_list$oc_cities
+    covid_data <- map_data_list$covid_city_data
+  } else if (geog_level == "zip") {
+    oc_data <- map_data_list$oc_zips
+    covid_data <- map_data_list$covid_zip_data
+  }
+  
   shp <- map_data_list$shp
   
-  if (sum(covid_data$posted_date == start_date) < 1) {
+  if (sum(range(covid_data$posted_date)[1] <= date_in_month) == 0) {
     stop("start_date is out of range")
-  } else if (sum(covid_data$posted_date == end_date) < 1) {
+  } else if (sum(range(covid_data$posted_date)[2] >= date_in_month) == 0) {
     stop("end_date is out of range")
   }
   
   
   if (geog_level == "city") {
     plot_data <- covid_data %>% 
-      filter(posted_date >= start_date & posted_date <= end_date) %>% 
+      filter(month(posted_date) == month(date_in_month)) %>% 
+      filter(year(posted_date) == year(date_in_month)) %>%
       group_by(city) %>% 
       summarize(per_pos = 100 * sum(new_cases) / sum(new_tests)) %>% 
       inner_join(oc_data, by = "city") %>% 
       mutate(plot_var = factor(
         case_when(
-          per_pos <= 2.5 ~ "0-2.5",
-          per_pos <= 5 ~ "2.5-5",
-          per_pos <= 10 ~ "5-10",
-          per_pos <= 15 ~ "10-15",
-          per_pos <= 20 ~ "15-20",
-          per_pos <= 30 ~ "20-30",
+          per_pos <= 6 ~ "0-6",
+          per_pos <= 12 ~ "6-12",
+          per_pos <= 18 ~ "12-18",
+          per_pos <= 24 ~ "18-24",
+          per_pos <= 30 ~ "24-30",
           per_pos > 30 ~ ">30"
         ),
         levels = c(
-          "0-2.5",
-          "2.5-5",
-          "5-10",
-          "10-15",
-          "15-20",
-          "20-30",
+          "0-6",
+          "6-12",
+          "12-18",
+          "18-24",
+          "24-30",
           ">30"
         )
       )) %>% 
       select(city, plot_var)
   } else if (geog_level == "zip") {
     plot_data <- covid_data %>% 
-      filter(posted_date >= start_date & posted_date <= end_date) %>% 
+      filter(month(posted_date) == month(date_in_month)) %>% 
+      filter(year(posted_date) == year(date_in_month)) %>%
       group_by(zip) %>% 
       summarize(per_pos = 100 * sum(new_cases) / sum(new_tests)) %>% 
       inner_join(oc_data, by = "zip") %>% 
       mutate(plot_var = factor(
         case_when(
-          per_pos <= 2.5 ~ "0-2.5",
-          per_pos <= 5 ~ "2.5-5",
-          per_pos <= 10 ~ "5-10",
-          per_pos <= 15 ~ "10-15",
-          per_pos <= 20 ~ "15-20",
-          per_pos <= 30 ~ "20-30",
+          per_pos <= 6 ~ "0-6",
+          per_pos <= 12 ~ "6-12",
+          per_pos <= 18 ~ "12-18",
+          per_pos <= 24 ~ "18-24",
+          per_pos <= 30 ~ "24-30",
           per_pos > 30 ~ ">30"
         ),
         levels = c(
-          "0-2.5",
-          "2.5-5",
-          "5-10",
-          "10-15",
-          "15-20",
-          "20-30",
+          "0-6",
+          "6-12",
+          "12-18",
+          "18-24",
+          "24-30",
           ">30"
         )
       )) %>% 
@@ -632,13 +670,8 @@ map_per_pos <- function(
     plot_data = plot_data, 
     shp = shp, 
     legend_label = legend_label,
+    month_year = paste0(month(date_in_month, label = TRUE), " ", year(date_in_month)),
     geog_level = geog_level,
-    discrete_plot_var = discrete_plot_var,
-    add_geog_level_labels = add_geog_level_labels,
-    size = size, 
-    segment.color = segment.color,
-    segment.linetype = segment.linetype,
-    min.segment.length = min.segment.length,
-    segment.size = segment.size
+    discrete_plot_var = discrete_plot_var
   )
 }
