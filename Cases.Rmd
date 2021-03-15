@@ -1,0 +1,60 @@
+---
+title: "Number of COVID-19 cases mapped to OC zip codes"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  fig.align = "center",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+
+```{r libraries}
+library(tidyverse)
+library(here)
+library(lubridate)
+library(gridExtra)
+
+source(here("map-functions.R"))
+```
+
+
+```{r actual-maps, results = FALSE}
+# Downloading data and shape file takes about 30 seconds
+map_covid_data <- prep_map_data(
+  neg_line_list_file = here("data/covid-data", "All PCR tests updated 3.8.21.csv"),
+  line_list_file = here("data/covid-data", "3.8.21 release to UCI team.csv"),
+  return_covid_data = TRUE
+)
+```
+
+```{r fig.align="center", fig.height=40, fig.width=22}
+first_date <- as.Date("2020/03/01")
+todays_date <- today()
+max_date_in_data <- max(map_covid_data$covid_city_data$posted_date)
+if (max_date_in_data > todays_date - 7) {
+  date_seq <- seq(first_date, max_date_in_data, by = "months")
+} else {
+  date_seq <- seq(first_date, today()-days(7), by = "months")
+}
+
+date_seq <- seq(first_date, today()-days(7), by = "months")
+#num_months <- length(date_seq)
+
+plot_list <- map(
+  .x = date_seq, 
+  .f = map_cases, 
+  map_data_list = map_covid_data, 
+  geog_level = "zip"
+)
+
+grid.arrange(grobs = plot_list, ncol = 3)
+```
+
+
+
+

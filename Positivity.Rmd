@@ -1,11 +1,11 @@
 ---
-title: "OC Covid Maps"
-output: pdf_document
+title: "Fraction of positive COVID-19 tests mapped to OC zip codes"
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo = TRUE,
+  echo = FALSE,
   fig.align = "center",
   message = FALSE,
   warning = FALSE
@@ -27,14 +27,16 @@ source(here("map-functions.R"))
 ```
 
 
-```{r actual-maps}
+```{r actual-maps, results = FALSE}
 # Downloading data and shape file takes about 30 seconds
 map_covid_data <- prep_map_data(
-  neg_line_list_file = here("data/covid-data", "All PCR tests updated 3.8.21.csv"),
-  line_list_file = here("data/covid-data", "3.8.21 release to UCI team.csv"),
+  neg_line_list_file = here("data/covid-data", "All PCR tests updated 2.22.21.csv"),
+  line_list_file = here("data/covid-data", "2.22.21 release to UCI team.csv"),
   return_covid_data = TRUE
 )
+```
 
+```{r }
 map_cases(
   map_data_list = map_covid_data, 
   geog_level = "city",

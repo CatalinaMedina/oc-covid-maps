@@ -1,0 +1,79 @@
+---
+title: "Number of COVID-19 tests (positive + negative) mapped to OC zip codes"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  fig.align = "center",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+
+```{r libraries}
+library(tidyverse)
+library(rgdal)
+library(broom)
+library(here)
+library(lubridate)
+library(viridis)
+library(TTR)
+library(ckanr)
+
+source(here("map-functions.R"))
+```
+
+
+```{r actual-maps, results = FALSE}
+# Downloading data and shape file takes about 30 seconds
+map_covid_data <- prep_map_data(
+  neg_line_list_file = here("data/covid-data", "All PCR tests updated 2.22.21.csv"),
+  line_list_file = here("data/covid-data", "2.22.21 release to UCI team.csv"),
+  return_covid_data = TRUE
+)
+```
+
+```{r }
+map_cases(
+  map_data_list = map_covid_data, 
+  geog_level = "city",
+  date_in_month = as.Date("2020/05/31")
+)
+
+map_cases(
+  map_data_list = map_covid_data, 
+  geog_level = "zip",
+  date_in_month = as.Date("2020/05/31")
+)
+
+map_tests(
+  map_data_list = map_covid_data, 
+  geog_level = "city",
+  date_in_month = as.Date("2020/05/31")
+)
+
+map_tests(
+  map_data_list = map_covid_data, 
+  geog_level = "zip",
+  date_in_month = as.Date("2020/05/31")
+)
+
+map_per_pos(
+  map_data_list = map_covid_data, 
+  geog_level = "city",
+  date_in_month = as.Date("2020/05/31")
+)
+
+map_per_pos(
+  map_data_list = map_covid_data, 
+  geog_level = "zip",
+  date_in_month = as.Date("2020/05/31")
+)
+```
+
+
+
+
